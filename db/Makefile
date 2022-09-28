@@ -1,6 +1,6 @@
 CC=g++
 CFLAGS=-std=c++11 -c -g -O3 -Wall -fgnu-tm -D SPLINTERDB_PLATFORM_DIR=platform_linux
-INCLUDES=-I ../
+INCLUDES=-I ../  -I/home/betrfs/splinter-db/splinterdb/include
 SOURCES=$(wildcard *.cc)
 OBJECTS=$(SOURCES:.cc=.o)
 
