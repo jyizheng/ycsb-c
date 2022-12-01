@@ -24,7 +24,7 @@ SplinterDB::SplinterDB(utils::Properties &props, bool preloaded) {
 
   default_data_config_init(max_key_size, &data_cfg);
   splinterdb_cfg.filename                 = props.GetProperty("splinterdb.filename").c_str();
-  splinterdb_cfg.cache_size               = props.GetIntProperty("splinterdb.cache_size_mb") * 1024 *1024;
+  splinterdb_cfg.cache_size               = 64 * 1024 *1024;
   splinterdb_cfg.disk_size                = props.GetIntProperty("splinterdb.disk_size_gb") * 1024 * 1024 * 1024;
   splinterdb_cfg.data_cfg                 = &data_cfg;
   splinterdb_cfg.heap_handle              = NULL;
