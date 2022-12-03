@@ -29,6 +29,7 @@ class Properties {
   const std::map<std::string, std::string> &properties() const;
 
   void SetProperty(const std::string &key, const std::string &value);
+  void SetPropertyForLoad();
   bool Load(std::ifstream &input);
  private:
   std::map<std::string, std::string> properties_;
@@ -61,6 +62,25 @@ inline const std::map<std::string, std::string> &Properties::properties() const 
 
 inline void Properties::SetProperty(const std::string &key,
                                     const std::string &value) {
+  std::cout << "key=" << key << std::endl;
+  std::cout << "value=" << value << std::endl;
+  properties_[key] = value;
+}
+
+inline void Properties::SetPropertyForLoad() {
+  //std::cout << "key=" << key << std::endl;
+  //std::cout << "value=" << value << std::endl;
+  std::string key, value;
+  key = "recordcount";
+  value = "10";
+  properties_[key] = value;
+
+  key = "workload";
+  value = "com.yahoo.ycsb.workloads.CoreWorkload";
+  properties_[key] = value;
+
+  key = "fieldcount";
+  value = "1";
   properties_[key] = value;
 }
 

@@ -303,14 +303,19 @@ void ParseCommandLine(int argc, const char *argv[], utils::Properties &props, Wo
         exit(0);
       }
       workload.filename.assign(argv[argindex]);
+#if 0
       ifstream input(argv[argindex]);
       try {
+        std::cout << "=============== input ========" << argv[argindex] << std::endl;
         workload.props.Load(input);
       } catch (const string &message) {
         cout << message << endl;
         exit(0);
       }
       input.close();
+#else
+      workload.props.SetPropertyForLoad();
+#endif
       argindex++;
       if (strcmp(argv[argindex-2], "-W") == 0) {
         run_workloads.push_back(workload);
