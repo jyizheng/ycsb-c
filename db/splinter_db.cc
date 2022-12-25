@@ -55,7 +55,7 @@ SplinterDB::SplinterDB(utils::Properties &props, bool preloaded) {
 
 SplinterDB::~SplinterDB()
 {
-  splinterdb_close(spl);
+  splinterdb_close(&spl);
 }
 
 void SplinterDB::Init()
