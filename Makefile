@@ -1,6 +1,6 @@
 CC=g++
-CFLAGS=-std=c++17 -g -Wall -pthread -I./
-LDFLAGS= -lpthread -ltbb -lhiredis -lsplinterdb -lrocksdb
+CFLAGS=-std=c++17 -g -Wall -pthread -I./ -I/mnt/splinterdb/include
+LDFLAGS= -lpthread -lsplinterdb -L/mnt/splinterdb/build/lib
 SUBDIRS=core db
 SUBCPPSRCS=$(wildcard core/*.cc) $(wildcard db/*.cc)
 SUBCSRCS=$(wildcard core/*.c) $(wildcard db/*.c)
