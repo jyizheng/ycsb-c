@@ -1,6 +1,6 @@
 CC=g++
-CFLAGS=-std=c++17 -g -Wall -pthread -I./
-LDFLAGS= -lpthread -ltbb -lhiredis -lsplinterdb -lrocksdb
+CFLAGS=-std=c++17 -g -Wall -pthread -I./ -I../tweezer/include
+LDFLAGS= -lpthread -L../tweezer -L../libs -L /root/snappy/build -lrocksdb -lssl -lcrypto -ltcmalloc_minimal -lsnappy
 SUBDIRS=core db
 SUBCPPSRCS=$(wildcard core/*.cc) $(wildcard db/*.cc)
 SUBCSRCS=$(wildcard core/*.c) $(wildcard db/*.c)
