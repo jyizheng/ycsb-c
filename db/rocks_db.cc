@@ -60,6 +60,7 @@ void RocksDB::InitializeOptions(utils::Properties &props)
   options.create_if_missing = !preloaded;
   options.error_if_exists = !preloaded;
   rocksdb::Status status = rocksdb::DB::Open(options, database_filename, &db);
+  cout << "status:" << status.ToString() << endl;
   assert(status.ok());
 }
 

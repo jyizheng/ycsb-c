@@ -10,12 +10,14 @@
 #include <string>
 #include <iostream>
 #include <vector>
-#include <future>
 #include "core/utils.h"
 #include "core/timer.h"
 #include "core/client.h"
 #include "core/core_workload.h"
 #include "db/db_factory.h"
+
+#include <stdlib.h>
+#include <pthread.h>
 
 using namespace std;
 
@@ -106,26 +108,40 @@ static inline void ProgressFinish(progress_mode pmode, uint64_t total_ops, volat
   ReportProgress(pmode, total_ops, global_op_counter, i % sync_interval, last_printed);
 }
 
-int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const uint64_t num_ops, bool is_loading,
-                   progress_mode pmode, uint64_t total_ops, volatile uint64_t *global_op_counter, volatile uint64_t *last_printed) {
-  db->Init();
-  ycsbc::Client client(*db, *wl);
-  uint64_t oks = 0;
+typedef struct thread_extra {
+  ycsbc::DB *db_;
+  ycsbc::CoreWorkload *wl_;
+  uint64_t num_ops_;
+  bool is_loading_;
+  progress_mode pmode_;
+  uint64_t total_ops_;
+  volatile uint64_t *global_op_counter_;
+  volatile uint64_t *last_printed_;
+  uint64_t oks_;
+} thread_extra_t;
 
-  if (is_loading) {
-    for (uint64_t i = 0; i < num_ops; ++i) {
-      oks += client.DoInsert();
-      ProgressUpdate(pmode, total_ops, global_op_counter, i, last_printed);
+void* DelegateClient(void *arg) {
+  thread_extra_t *extra = (thread_extra*)arg;
+
+  extra->db_->Init();
+  ycsbc::Client client(*(extra->db_), *(extra->wl_));
+
+  extra->oks_ = 0;
+
+  if (extra->is_loading_) {
+    for (uint64_t i = 0; i < extra->num_ops_; ++i) {
+      extra->oks_ += client.DoInsert();
+      ProgressUpdate(extra->pmode_, extra->total_ops_, extra->global_op_counter_, i, extra->last_printed_);
     }
   } else {
-    for (uint64_t i = 0; i < num_ops; ++i) {
-      oks += client.DoTransaction();
-      ProgressUpdate(pmode, total_ops, global_op_counter, i, last_printed);
+    for (uint64_t i = 0; i < extra->num_ops_; ++i) {
+      extra->oks_ += client.DoTransaction();
+      ProgressUpdate(extra->pmode_, extra->total_ops_, extra->global_op_counter_, i, extra->last_printed_);
     }
   }
-  ProgressFinish(pmode, total_ops, global_op_counter, num_ops, last_printed);
-  db->Close();
-  return oks;
+  ProgressFinish(extra->pmode_, extra->total_ops_, extra->global_op_counter_, extra->num_ops_, extra->last_printed_);
+  extra->db_->Close();
+  return NULL;
 }
 
 int main(const int argc, const char *argv[]) {
@@ -141,7 +157,10 @@ int main(const int argc, const char *argv[]) {
   } else if (props.GetProperty("progress", "none") == "percent") {
     pmode = percent_progress;
   }
-  vector<future<int>> actual_ops;
+
+  pthread_t* threads = (pthread_t*)malloc(sizeof(pthread_t)*num_threads);
+  thread_extra_t * load_args = (thread_extra_t*)malloc(sizeof(thread_extra_t)*num_threads);
+
   uint64_t record_count;
   uint64_t total_ops;
   uint64_t sum;
@@ -176,13 +195,20 @@ int main(const int argc, const char *argv[]) {
       for (unsigned int i = 0; i < num_threads; ++i) {
         uint64_t start_op = (record_count * i) / num_threads;
         uint64_t end_op = (record_count * (i + 1)) / num_threads;
-        actual_ops.emplace_back(async(launch::async, DelegateClient, db, &wls[i], end_op - start_op, true, pmode, record_count, &load_progress, &last_printed));
+        load_args[i].db_ = db;
+        load_args[i].wl_ = &wls[i];
+        load_args[i].num_ops_ = end_op - start_op;
+        load_args[i].is_loading_ = true;
+        load_args[i].pmode_ = pmode;
+        load_args[i].total_ops_ = record_count;
+        load_args[i].global_op_counter_ = &load_progress;
+        load_args[i].last_printed_ = &last_printed;
+        pthread_create(&threads[i], NULL, &DelegateClient, (void *)&load_args[i]);
       }
-      assert(actual_ops.size() == num_threads);
       sum = 0;
-      for (auto &n : actual_ops) {
-        assert(n.valid());
-        sum += n.get();
+      for (unsigned int i = 0; i < num_threads; ++i) {
+         pthread_join(threads[i], NULL);
+         sum += load_args[i].oks_;
       }
       if (pmode != no_progress) {
         cout << "\n";
@@ -194,6 +220,11 @@ int main(const int argc, const char *argv[]) {
     cerr << sum / load_duration / 1000 << endl;
   }
 
+  free(threads);
+  free(load_args);
+
+  pthread_t* work_threads = (pthread_t*)malloc(sizeof(pthread_t)*num_threads);
+  thread_extra_t * work_args = (thread_extra_t*)malloc(sizeof(thread_extra_t)*num_threads);
 
   // Perform any Run phases
   for (unsigned int i = 0; i < run_workloads.size(); i++) {
@@ -201,7 +232,6 @@ int main(const int argc, const char *argv[]) {
     for (unsigned int i = 0; i < num_threads; ++i) {
       wls[i].InitRunWorkload(workload.props, num_threads, i);
     }
-    actual_ops.clear();
     total_ops = stoi(workload.props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
     timer.Start();
     {
@@ -211,20 +241,30 @@ int main(const int argc, const char *argv[]) {
       for (unsigned int i = 0; i < num_threads; ++i) {
         uint64_t start_op = (total_ops * i) / num_threads;
         uint64_t end_op = (total_ops * (i + 1)) / num_threads;
-        actual_ops.emplace_back(async(launch::async,
-                                      DelegateClient, db, &wls[i], end_op - start_op, false, pmode, total_ops, &run_progress, &last_printed));
+
+        work_args[i].db_ = db;
+        work_args[i].wl_ = &wls[i];
+        work_args[i].num_ops_ = end_op - start_op;
+        work_args[i].is_loading_ = false;
+        work_args[i].pmode_ = pmode;
+        work_args[i].total_ops_ = total_ops;
+        work_args[i].global_op_counter_ = &run_progress;
+        work_args[i].last_printed_ = &last_printed;
+        pthread_create(&work_threads[i], NULL, &DelegateClient, (void *)&work_args[i]);
       }
-      assert(actual_ops.size() == num_threads);
       sum = 0;
-      for (auto &n : actual_ops) {
-        assert(n.valid());
-        sum += n.get();
+      for (unsigned int i = 0; i < num_threads; ++i) {
+        pthread_join(work_threads[i], NULL);
+        sum += work_args[i].oks_;
       }
       if (pmode != no_progress) {
         cout << "\n";
       }
     }
     double run_duration = timer.End();
+
+    free(work_threads);
+    free(work_args);
 
     cerr << "# Transaction throughput (KTPS)" << endl;
     cerr << props["dbname"] << '\t' << workload.filename << '\t' << num_threads << '\t';
